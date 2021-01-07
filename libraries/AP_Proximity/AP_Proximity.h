@@ -20,6 +20,7 @@
 #include <AP_Math/AP_Math.h>
 #include <GCS_MAVLink/GCS_MAVLink.h>
 
+// 이 플랫폼에서 지원하는 근접 센서 인스턴스의 최대 개수
 #define PROXIMITY_MAX_INSTANCES             1   // Maximum number of proximity sensor instances available on this platform
 #define PROXIMITY_MAX_IGNORE                6   // up to six areas can be ignored
 #define PROXIMITY_MAX_DIRECTION 8
@@ -60,26 +61,33 @@ public:
         Good
     };
 
+    // PROXIMITY_MAX_DIRECTION 개수만큼 거리 정보를 배열로 가짐. 거리정보를 GCS에 보내는데 사용
+    // 각 방향에 대해서 거리 정보를 담는 구조체
     // structure holding distances in PROXIMITY_MAX_DIRECTION directions. used for sending distances to ground station
     struct Proximity_Distance_Array {
         uint8_t orientation[PROXIMITY_MAX_DIRECTION]; // orientation (i.e. rough direction) of the distance (see MAV_SENSOR_ORIENTATION)
         float distance[PROXIMITY_MAX_DIRECTION];      // distance in meters
     };
 
+    // 가용한 근접 센서를 탐지하고 초기화
     // detect and initialise any available proximity sensors
     void init(void);
 
+    // 모든 근접 센서의 상태를 업데이트. main loop에서 빠르게 호출해야만 한다. 몇 hz?
     // update state of all proximity sensors. Should be called at high rate from main loop
     void update(void);
 
+    // 센서 방향과 yaw 보정
     // return sensor orientation and yaw correction
     uint8_t get_orientation(uint8_t instance) const;
     int16_t get_yaw_correction(uint8_t instance) const;
 
+    // 센서의 health 상태
     // return sensor health
     Status get_status(uint8_t instance) const;
     Status get_status() const;
 
+    // 근접 센서의 개수
     // Return the number of proximity sensors
     uint8_t num_sensors(void) const {
         return num_instances;

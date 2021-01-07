@@ -1,6 +1,9 @@
 /// @file   AC_Sprayer.h
 /// @brief  Crop sprayer library
 
+// 관련 정보 : https://ardupilot.org/copter/docs/sprayer.html
+// 농업용 드론 개발시 참고
+
 /**
     The crop spraying functionality can be enabled in ArduCopter by doing the following:
         - set RC7_OPTION or RC8_OPTION parameter to 15 to allow turning the sprayer on/off from one of these channels
@@ -31,6 +34,7 @@
 
 #if HAL_SPRAYER_ENABLED
 
+// spinner와 pump로 구성되어 있는 스프레이를 pwm으로 제어
 /// @class  AC_Sprayer
 /// @brief  Object managing a crop sprayer comprised of a spinner and a pump both controlled by pwm
 class AC_Sprayer {
@@ -58,9 +62,11 @@ public:
 
     /// To-Do: add function to decode pilot input from channel 6 tuning knob
 
+    // pump_rate를 설정. 1m/s로 비행 중에 spray되는 양을 결정. 
     /// set_pump_rate - sets desired quantity of spray when travelling at 1m/s as a percentage of the pumps maximum rate
     void set_pump_rate(float pct_at_1ms) { _pump_pct_1ms.set(pct_at_1ms); }
 
+    // 속도와 뿌리는 양을 기반으로 servo 위치를 조절
     /// update - adjusts servo positions based on speed and requested quantity
     void update();
 

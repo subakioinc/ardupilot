@@ -15,6 +15,7 @@
 #pragma once
 
 /*
+  Copter용 고급 failsafe 지원
   advanced failsafe support for copter
  */
 
