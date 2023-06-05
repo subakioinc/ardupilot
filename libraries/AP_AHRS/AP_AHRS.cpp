@@ -537,6 +537,7 @@ void AP_AHRS::update_EKF2(void)
 #if HAL_NAVEKF3_AVAILABLE
 void AP_AHRS::update_EKF3(void)
 {
+    // ekf3 처음 구동될때 filter 초기화를 위한 체크 
     if (!_ekf3_started) {
         // wait 1 second for DCM to output a valid tilt error estimate
         if (start_time_ms == 0) {
@@ -551,6 +552,7 @@ void AP_AHRS::update_EKF3(void)
                 }
             }
         }
+        // filter 초기화!!
         if (AP_HAL::millis() - start_time_ms > startup_delay_ms) {
             _ekf3_started = EKF3.InitialiseFilter();
         }

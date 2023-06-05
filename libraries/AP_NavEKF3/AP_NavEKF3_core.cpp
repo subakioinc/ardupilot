@@ -483,12 +483,28 @@ timee to reduce the resulting tilt error. Yaw alignment is not performed by this
 function, but is perfomred later and initiated the SelectMagFusion() function
 after the tilt has stabilised.
 */
+/*
+부트스트랩은 통계적 추론 방법의 한 유형입니다. 부트스트랩은 데이터 세트에서 샘플을 무작위로 추출하고 추출된 샘플을 사용하여 통계량을 계산합니다. 이 과정을 반복하여 여러 개의 통계량을 계산하고, 그 통계량의 분포를 사용하여 원래 데이터 세트의 통계량을 추정합니다.
 
+부트스트랩은 데이터 세트가 작거나 데이터 세트의 분포가 알려지지 않은 경우 유용한 방법입니다. 부트스트랩은 또한 데이터 세트의 불확실성을 추정하는 데 사용할 수 있습니다.
+
+부트스트랩은 다음과 같은 다양한 방법으로 사용될 수 있습니다.
+ * 통계량의 추정
+ * 데이터 세트의 분포 추정
+ * 데이터 세트의 불확실성 추정
+*/
+
+// 즉 가속도 센서 값으로부터 states를 초기화 (데이터 세트가 불확실한 경우 가속도 센서를 기준으로 추정)
+// 측정한 가속도가 중력에 큰 영향을 받는다고 가정.
+// 이 가정이 참이 아이면 EKF는 tilt error가 나는 경우를 줄이기 위해서 시간이 필요하다.
+// yaw 정렬은 이 함수에서 처리하지 않고 tile가 안정화 된 후에 SelectMagFusion() 함수에서 초기화 수행
 bool NavEKF3_core::InitialiseFilterBootstrap(void)
 {
+    // sensor 선택하기 : GPS, Mag, Baro, Airspeed
     // update sensor selection (for affinity)
     update_sensor_selection();
 
+    // 고정익 타입에서 GPS lock이 되지 않으면 초기화를 수행하지 않는다.
     // If we are a plane and don't have GPS lock then don't initialise
     if (assume_zero_sideslip() && dal.gps().status(preferred_gps) < AP_DAL_GPS::GPS_OK_FIX_3D) {
         dal.snprintf(prearm_fail_string,
@@ -498,6 +514,7 @@ bool NavEKF3_core::InitialiseFilterBootstrap(void)
         return false;
     }
 
+    // EKF를 구동시키기 위해서 필요한 모든 센서값 읽기
     // read all the sensors required to start the EKF the states
     readIMUData();
     readMagData();
@@ -505,6 +522,7 @@ bool NavEKF3_core::InitialiseFilterBootstrap(void)
     readGpsYawData();
     readBaroData();
 
+    // 초기화 성공적으로 수행 후에 마지막으로 IMU 데이터를 buffer에 채워준다. 구동될때 IMU 데이터가 없으면 pause되기 쉽다.
     if (statesInitialised) {
         // we are initialised, but we don't return true until the IMU
         // buffer has been filled. This prevents a timing
@@ -512,6 +530,7 @@ bool NavEKF3_core::InitialiseFilterBootstrap(void)
         return storedIMU.is_filled();
     }
 
+    // buffer를 채우기 위해서 충분한 sensor data를 축적 : 1000 ms 동안 축적
     // accumulate enough sensor data to fill the buffers
     if (firstInitTime_ms == 0) {
         firstInitTime_ms = imuSampleTime_ms;
@@ -520,15 +539,18 @@ bool NavEKF3_core::InitialiseFilterBootstrap(void)
         return false;
     }
 
+    // 변수 초기화 : EKF3 동작하면서 값이 바뀌는 변수들에 대한 초기값
     // set re-used variables to zero
     InitialiseVariables();
 
+    // IMU에서 측정한 가속도 벡터 (XYZ 축)
     // acceleration vector in XYZ body axes measured by the IMU (m/s^2)
     Vector3F initAccVec;
 
     // TODO we should average accel readings over several cycles
     initAccVec = dal.ins().get_accel(accel_index_active).toftype();
 
+    // roll, pitch 계산을 위해서 가속도 벡터를 normalize
     // normalise the acceleration vector
     ftype pitch=0, roll=0;
     if (initAccVec.length() > 0.001f) {
@@ -541,13 +563,16 @@ bool NavEKF3_core::InitialiseFilterBootstrap(void)
         roll = atan2F(-initAccVec.y , -initAccVec.z);
     }
 
+    // 초기 roll, pitch를 계산 
     // calculate initial roll and pitch orientation
     stateStruct.quat.from_euler(roll, pitch, 0.0f);
 
+    // 속도, 위치 상태값을 초기화
     // initialise dynamic states
     stateStruct.velocity.zero();
     stateStruct.position.zero();
 
+    // process model 초기화
     // initialise static process model states
     stateStruct.gyro_bias.zero();
     stateStruct.accel_bias.zero();
@@ -555,21 +580,27 @@ bool NavEKF3_core::InitialiseFilterBootstrap(void)
     stateStruct.earth_magfield.zero();
     stateStruct.body_magfield.zero();
 
+    // postiion, velocity, height를 reset
     // set the position, velocity and height
     ResetVelocity(resetDataSource::DEFAULT);
     ResetPosition(resetDataSource::DEFAULT);
     ResetHeight();
 
+    // sources를 초기화
     // initialise sources
     posxy_source_last = frontend->sources.getPosXYSource();
     yaw_source_last = frontend->sources.getYawSource();
 
+    // NED frame 내에서 Earth rotation vector 정의
+    // NED navigation frame내에서 Earth rotation vector를 정의
     // define Earth rotation vector in the NED navigation frame
     calcEarthRateNED(earthRateNED, dal.get_home().lat);
 
+    // 공분산(covariance) 행렬 초기화
     // initialise the covariance matrix
     CovarianceInit();
 
+    // 현재 EKF state를 output data 변수에 넣기
     // reset the output predictor states
     StoreOutputReset();
 
@@ -582,6 +613,7 @@ bool NavEKF3_core::InitialiseFilterBootstrap(void)
         inactiveBias[i].accel_bias.zero();
     }
 
+    // GCS에게 IMU 초기화되었다는 메시지 전달
     GCS_SEND_TEXT(MAV_SEVERITY_INFO, "EKF3 IMU%u initialised",(unsigned)imu_index);
 
     // we initially return false to wait for the IMU buffer to fill
@@ -594,10 +626,12 @@ void NavEKF3_core::CovarianceInit()
     // zero the matrix
     memset(&P[0][0], 0, sizeof(P));
 
+    // 초기 각도 불확실성을 rotation vector에 대한 분산으로 정의
     // define the initial angle uncertainty as variances for a rotation vector
     Vector3F rot_vec_var;
     rot_vec_var.x = rot_vec_var.y = rot_vec_var.z = sq(0.1f);
 
+    // quaternion state 공분산을 초기화
     // reset the quaternion state covariances
     CovariancePrediction(&rot_vec_var);
 
@@ -634,53 +668,87 @@ void NavEKF3_core::CovarianceInit()
     Popt = 0.25f;
 
 }
+/*
+
+GSF yaw estimator 알고리즘은 GPS 데이터를 사용하여 항공기의 yaw각도를 추정하는 방법입니다. 이 알고리즘은 두 가지 주요 단계로 구성됩니다.
+
+GPS 속도 보정: GPS 속도 데이터는 AHRS의 yaw각도 추정치를 보정하는 데 사용됩니다. 이는 GPS 속도를 AHRS의 예측 속도와 비교하여 수행됩니다. GPS 속도가 예측 속도와 크게 다르면 yaw각도 추정치가 보정됩니다.
+yaw각도 추정: yaw각도은 칼만 필터를 사용하여 추정됩니다. 칼만 필터는 GPS 속도 데이터와 AHRS yaw각도 추정치를 모두 사용하여 yaw각도을 추정하는 재귀 필터입니다.
+GSF 요소 추정기 알고리즘은 항공기의 yaw각도을 추정하는 강력한 방법입니다. 특히 고속으로 비행하는 항공기에 유용합니다. 이 경우 AHRS의 yaw각도 추정치가 정확하지 않을 수 있습니다.
+
+GSF 요소 추정기 알고리즘을 사용하는 이점은 다음과 같습니다.
+
+AHRS의 yaw각도 추정치보다 정확합니다. 특히 고속에서 그렇습니다.
+바람 돌풍과 같은 방해에 더 강합니다.
+GPS 신호가 손실된 경우에도 항공기의 yaw각도을 추정하는 데 사용할 수 있습니다.
+GSF 요소 추정기 알고리즘을 사용하는 단점은 다음과 같습니다.
+
+AHRS의 yaw각도 추정치보다 계산 비용이 많이 듭니다.
+GPS 데이터가 필요하며 모든 상황에서 사용할 수 있는 것은 아닙니다.
+*/
 
 /********************************************************
 *                 UPDATE FUNCTIONS                      *
 ********************************************************/
+// 새로운 IMU 데이터가 들어올때 마다 이 함수가 호출되어야만 한다.
 // Update Filter States - this should be called whenever new IMU data is available
 void NavEKF3_core::UpdateFilter(bool predict)
 {
+    // 새로운 prediction cycle이 시작되어야 한다는 권한을 front-end에게 부여
     // Set the flag to indicate to the filter that the front-end has given permission for a new state prediction cycle to be started
     startPredictEnabled = predict;
 
+    // 아직 filter 초기화가 안되었으면 그냥 빠져나감
     // don't run filter updates if states have not been initialised
     if (!statesInitialised) {
         return;
     }
 
+    // simulation을 위해서 초기값 채우기
     fill_scratch_variables();
 
+    // sensor 선택 업데이트
     // update sensor selection (for affinity)
     update_sensor_selection();
 
     // TODO - in-flight restart method
 
+    // arm 상태 검사 및 필요한 검사.
     // Check arm status and perform required checks and mode changes
     controlFilterModes();
 
+    // IMU 센서값 읽기
     // read IMU data as delta angles and velocities
     readIMUData();
 
+    // 만약 새로운 IMU 데이터가 buffer에 들어가 있으면
+    // 추정하기 위해서 EKF 식을 실행
     // Run the EKF equations to estimate at the fusion time horizon if new IMU data is available in the buffer
     if (runUpdates) {
+        // 지연 시간 horizon으로부터 IMU 데이터를 사용해서 states를 추정
         // Predict states using IMU data from the delayed time horizon
         UpdateStrapdownEquationsNED();
 
+        // 공분산 prediction 
         // Predict the covariance growth
         CovariancePrediction(nullptr);
 
+        // GSF yaw estimator 알고리즘에서 IMU와 airspeed data를 사용해서 IMU prediction 단계를 수행시킨다.
+        // 최신 yaw estimate를 제공하기 위해서 SelectMagFusion() 전에 실행해야만 한다.
         // Run the IMU prediction step for the GSF yaw estimator algorithm
         // using IMU and optionally true airspeed data.
         // Must be run before SelectMagFusion() to provide an up to date yaw estimate
         runYawEstimatorPrediction();
 
+        // mag 센서나 외부 yaw 센서 데이터를 사용해서 update
         // Update states using  magnetometer or external yaw sensor data
         SelectMagFusion();
 
+        // GPS와 고도 데이터를 사용해서 states를 업데이트
         // Update states using GPS and altimeter data
         SelectVelPosFusion();
 
+        // GSF yaw estimator 알고리즘을 위해서 GPS 속도 보정 단계 수행
         // Run the GPS velocity correction step for the GSF yaw estimator algorithm
         // and use the yaw estimate to reset the main EKF yaw if requested
         // Muat be run after SelectVelPosFusion() so that fresh GPS data is available
@@ -758,6 +826,8 @@ void NavEKF3_core::correctDeltaVelocity(Vector3F &delVel, ftype delVelDT, uint8_
 */
 void NavEKF3_core::UpdateStrapdownEquationsNED()
 {
+    // 이전 attitude로부터 회전한 quaternion states를 업데이트
+    // 방법 : 회전한 각도 적용, normalise for 지도 회전 rate
     // update the quaternion states by rotating from the previous attitude through
     // the delta angle rotation quaternion and normalise
     // apply correction for earth's rotation rate

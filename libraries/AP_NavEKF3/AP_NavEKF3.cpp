@@ -766,6 +766,7 @@ bool NavEKF3::InitialiseFilter(void)
     }
     _frameTimeUsec = 1e6 / loop_rate;
 
+    // prediction에 필요한 IMU frames의 개수 
     // expected number of IMU frames per prediction
     _framesPerPrediction = uint8_t((EKF_TARGET_DT / (_frameTimeUsec * 1.0e-6) + 0.5));
 
@@ -781,7 +782,7 @@ bool NavEKF3::InitialiseFilter(void)
 #endif
 
     if (core == nullptr) {
-
+        // IMU가 1개면 filter 1개만 할당
         // don't run multiple filters for 1 IMU
         uint8_t mask = (1U<<ins.get_accel_count())-1;
         _imuMask.set(_imuMask.get() & mask);
@@ -793,6 +794,7 @@ bool NavEKF3::InitialiseFilter(void)
         }
         num_cores = 0;
 
+        // IMU의 개수를 얻기 : num_cores
         // count IMUs from mask
         for (uint8_t i=0; i<MAX_EKF_CORES; i++) {
             if (_imuMask & (1U<<i)) {
@@ -802,6 +804,7 @@ bool NavEKF3::InitialiseFilter(void)
             }
         }
 
+        // EKF core를 할당하기 위해서 필요한 memroy 체크 
         // check if there is enough memory to create the EKF cores
         if (AP::dal().available_memory() < sizeof(NavEKF3_core)*num_cores + 4096) {
             GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "EKF3 not enough memory");
@@ -809,6 +812,7 @@ bool NavEKF3::InitialiseFilter(void)
             return false;
         }
 
+        // CCM RAM의 메모리 할당 먼저 시도하고 안되면 일반 RAM에서 메모리 할당
         //try to allocate from CCM RAM, fallback to Normal RAM if not available or full
         core = (NavEKF3_core*)AP::dal().malloc_type(sizeof(NavEKF3_core)*num_cores, AP::dal().MEM_FAST);
         if (core == nullptr) {
@@ -817,12 +821,15 @@ bool NavEKF3::InitialiseFilter(void)
             return false;
         }
 
+        // 모든 cores에 대한 인스턴스 메모리 할당
         // Call constructors on all cores
         for (uint8_t i = 0; i < num_cores; i++) {
             new (&core[i]) NavEKF3_core(this);
         }
     }
 
+    // 할당 받은 cores에 대해서 setup 수행
+    // setup이란 : 해당 core에 대한 IMU index 지정, data buffer 생성
     // Set up any cores that have been created
     // This specifies the IMU to be used and creates the data buffers
     // If we are unable to set up a core, return false and try again next time the function is called
@@ -843,12 +850,15 @@ bool NavEKF3::InitialiseFilter(void)
     // set relative error scores for all cores to 0
     resetCoreErrors();
 
+    // 사용자가 지정한 primary로 primary를 지정
+    // _primary_core의 초기값은 cores의 개수
     // Set the primary initially to be users selected primary
     primary = uint8_t(_primary_core) < num_cores? _primary_core : 0;
 
     // invalidate shared origin
     common_origin_valid = false;
 
+    // 각 core에 대한 bootstrap을 초기화
     // initialise the cores. We return success only if all cores
     // initialise successfully
     bool ret = true;
@@ -856,9 +866,11 @@ bool NavEKF3::InitialiseFilter(void)
         ret &= core[i].InitialiseFilterBootstrap();
     }
 
+    // primary로 설정한 마지막 시간을 0으로 설정
     // set last time the cores were primary to 0
     memset(coreLastTimePrimary_us, 0, sizeof(coreLastTimePrimary_us));
 
+    // capture reset events에 사용하는 구조체를 0으로 초기화
     // zero the structs used capture reset events
     memset(&yaw_reset_data, 0, sizeof(yaw_reset_data));
     memset((void *)&pos_reset_data, 0, sizeof(pos_reset_data));
