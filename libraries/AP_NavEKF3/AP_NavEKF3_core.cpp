@@ -184,7 +184,7 @@ bool NavEKF3_core::setup_core(uint8_t _imu_index, uint8_t _core_index)
 /********************************************************
 *                   INIT FUNCTIONS                      *
 ********************************************************/
-
+// class 생생저에서 초기화하지 않고 INIT 함수를 따로 제공하는 이유 : 비행 중에 이 함수를 호출하여 재시작 가능하게 만들기 위해서 
 // Use a function call rather than a constructor to initialise variables because it enables the filter to be re-started in flight if necessary.
 void NavEKF3_core::InitialiseVariables()
 {
@@ -620,6 +620,7 @@ bool NavEKF3_core::InitialiseFilterBootstrap(void)
     return false;
 }
 
+// 공분산 행렬 초기화
 // initialise the covariance matrix
 void NavEKF3_core::CovarianceInit()
 {
@@ -707,7 +708,7 @@ void NavEKF3_core::UpdateFilter(bool predict)
     // simulation을 위해서 초기값 채우기
     fill_scratch_variables();
 
-    // sensor 선택 업데이트
+    // sensor 선택 업데이트 (gps, mag, baro, airspeed 센서들이 여러개 있는 경우 1개를 선택)
     // update sensor selection (for affinity)
     update_sensor_selection();
 
@@ -717,7 +718,7 @@ void NavEKF3_core::UpdateFilter(bool predict)
     // Check arm status and perform required checks and mode changes
     controlFilterModes();
 
-    // IMU 센서값 읽기
+    // IMU 센서값 읽기 : measurement (angle, velocity)
     // read IMU data as delta angles and velocities
     readIMUData();
 
@@ -740,7 +741,7 @@ void NavEKF3_core::UpdateFilter(bool predict)
         // Must be run before SelectMagFusion() to provide an up to date yaw estimate
         runYawEstimatorPrediction();
 
-        // mag 센서나 외부 yaw 센서 데이터를 사용해서 update
+        // mag 센서나 외부 yaw 센서 데이터를 사용해서 state를 update
         // Update states using  magnetometer or external yaw sensor data
         SelectMagFusion();
 
@@ -771,6 +772,7 @@ void NavEKF3_core::UpdateFilter(bool predict)
         // Update states using sideslip constraint assumption for fly-forward vehicles or body drag for multicopters
         SelectBetaDragFusion();
 
+        // filter 상태를 업데이트
         // Update the filter status
         updateFilterStatus();
 
@@ -782,6 +784,7 @@ void NavEKF3_core::UpdateFilter(bool predict)
         }
     }
 
+    // output state를 계산! fusion한 후에 output을 계산
     // Wind output forward from the fusion to output time horizon
     calcOutputStates();
 
@@ -799,6 +802,7 @@ void NavEKF3_core::UpdateFilter(bool predict)
         last_filter_ok_ms != 0 &&
         dal.millis() - last_filter_ok_ms > 5000 &&
         !dal.get_armed()) {
+        // 5초 동안 unhealthy 상태면 filter를 reset
         // we've been unhealthy for 5 seconds after being healthy, reset the filter
         GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "EKF3 IMU%u forced reset",(unsigned)imu_index);
         last_filter_ok_ms = 0;
@@ -889,6 +893,13 @@ void NavEKF3_core::UpdateStrapdownEquationsNED()
 }
 
 /*
+PVA 솔루션을 fusion time horizon에서 현재 time horizon으로 전파시키기 위해서 간단한 observer를 사용하며, 
+ 이 observer는 아래와 같이 2가지 함수를 수행한다 :
+ 1) EKF가 사용하는 지연 time horizon을 보정
+ 2) state 보정을 위해서 LPF를 적용. measurement fusion으로 인해 의도치 않은 noise가 control loop안으로 들어가므로 states 내에 'stepping'을 방지하기 위해서 LPF를 적용.
+EKF에서 시간 지연을 보정하기 위해 상보필터를 사용하는 아이디어는 A Khosravian의 아이디어를 기반으로 하였다.
+*/
+/*
  * Propagate PVA solution forward from the fusion time horizon to the current time horizon
  * using simple observer which performs two functions:
  * 1) Corrects for the delayed time horizon used by the EKF.
@@ -902,44 +913,55 @@ void NavEKF3_core::UpdateStrapdownEquationsNED()
 */
 void NavEKF3_core::calcOutputStates()
 {
+    // IMU 데이터에 대해서 보정하기
     // apply corrections to the IMU data
     Vector3F delAngNewCorrected = imuDataNew.delAng;
     Vector3F delVelNewCorrected = imuDataNew.delVel;
     correctDeltaAngle(delAngNewCorrected, imuDataNew.delAngDT, imuDataNew.gyro_index);
     correctDeltaVelocity(delVelNewCorrected, imuDataNew.delVelDT, imuDataNew.accel_index);
 
+    // EKF 솔루션에 보정을 적용
     // apply corrections to track EKF solution
     Vector3F delAng = delAngNewCorrected + delAngCorrection;
 
+    // rotation 벡터를 quaternion으로 변환
     // convert the rotation vector to its equivalent quaternion
     QuaternionF deltaQuat;
     deltaQuat.from_axis_angle(delAng);
 
+    // 이전 attitude로부터 회전시켜서 quternion states를 업데이트. (즉 이전 attitude에서 delta angle만큼 회전시켜면 현재 attitude가 된다.)
     // update the quaternion states by rotating from the previous attitude through
     // the delta angle rotation quaternion and normalise
     outputDataNew.quat *= deltaQuat;
     outputDataNew.quat.normalize();
 
+    // nav cosine matrix를 사용하여 body를 계산
     // calculate the body to nav cosine matrix
     Matrix3F Tbn_temp;
     outputDataNew.quat.rotation_matrix(Tbn_temp);
 
+    // body delta 속도를 nav frame내에서의 delta 속도로 변환
     // transform body delta velocities to delta velocities in the nav frame
     Vector3F delVelNav  = Tbn_temp*delVelNewCorrected;
     delVelNav.z += GRAVITY_MSS*imuDataNew.delVelDT;
 
+    // 속도를 저장해서 position 계산에 사용할 예정
     // save velocity for use in trapezoidal integration for position calcuation
     Vector3F lastVelocity = outputDataNew.velocity;
 
+    // 속도를 얻기 위해서 delta 속도를 더하기 (즉 현재 속도는 이전 속도에서 delta 속도만큼 더해주면 된다.)
     // sum delta velocities to get velocity
     outputDataNew.velocity += delVelNav;
 
+    // 높이와 높이 rate를 위해서 3차 상보 필터를 구현
+    // 참고 논문 : Optimizing the Gains of the Baro-Inertial Vertical Channel
     // Implement third order complementary filter for height and height rate
     // Reference Paper :
     // Optimizing the Gains of the Baro-Inertial Vertical Channel
     // Widnall W.S, Sinha P.K,
     // AIAA Journal of Guidance and Control, 78-1307R
 
+    // 필터는 과거 Euler를 사용하여 계산 
     // Perform filter calculation using backwards Euler integration
     // Coefficients selected to place all three filter poles at omega
     const ftype CompFiltOmega = M_2PI * constrain_ftype(frontend->_hrt_filt_freq, 0.1f, 30.0f);
@@ -952,9 +974,11 @@ void NavEKF3_core::calcOutputStates()
     ftype integ3_input = (vertCompFiltState.vel + pos_err * CompFiltOmega * 3.0f) * imuDataNew.delVelDT;
     vertCompFiltState.pos += integ3_input; 
 
+    // 속도에 대한 사다리꼴 적분을 적용하여 position을 계산한다. 
     // apply a trapezoidal integration to velocities to calculate position
     outputDataNew.position += (outputDataNew.velocity + lastVelocity) * (imuDataNew.delVelDT*0.5f);
 
+    // IMU 가속도에 offset이 있는 경우 EKF 속도와 position 결과에 offset을 더해주어 보정. 
     // If the IMU accelerometer is offset from the body frame origin, then calculate corrections
     // that can be added to the EKF velocity and position outputs so that they represent the velocity
     // and position of the body frame origin.
@@ -976,6 +1000,7 @@ void NavEKF3_core::calcOutputStates()
         posOffsetNED.zero();
     }
 
+    // 고정익에 적용
     // Detect fixed wing launch acceleration using latest data from IMU to enable early startup of filter functions
     // that use launch acceleration to detect start of flight
     if (!inFlight && !dal.get_takeoff_expected() && assume_zero_sideslip()) {
@@ -985,8 +1010,10 @@ void NavEKF3_core::calcOutputStates()
         }
     }
 
+    // 링 버퍼에 INS states를 저장. IMU data 버퍼와 같은 크기와 시간에 맞게 구성. 
     // store INS states in a ring buffer that with the same length and time coordinates as the IMU data buffer
     if (runUpdates) {
+        // 가장 최신 출력값 영역에 states를 저장한다.
         // store the states at the output time horizon
         storedOutput[storedIMU.get_youngest_index()] = outputDataNew;
 
@@ -1044,6 +1071,7 @@ void NavEKF3_core::calcOutputStates()
         // calculate a gain to track the EKF position states with the specified time constant
         ftype velPosGain = dtEkfAvg / constrain_ftype(tauPosVel, dtEkfAvg, 10.0f);
 
+        // 보정을 계산하는데 PI feedback을 사용한다.  
         // use a PI feedback to calculate a correction that will be applied to the output state history
         posErrintegral += posErr;
         velErrintegral += velErr;
@@ -1075,7 +1103,7 @@ void NavEKF3_core::calcOutputStates()
             // push the updated data to the buffer
             storedOutput[index] = outputStates;
         }
-
+        // 최종 출력에 보정된 값을 넣어준다.
         // update output state to corrected values
         outputDataNew = storedOutput[storedIMU.get_youngest_index()];
 

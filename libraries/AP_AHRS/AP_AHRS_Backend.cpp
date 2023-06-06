@@ -30,6 +30,7 @@ void AP_AHRS_Backend::init()
 {
 }
 
+// 최신 ins 데이터를 사용하여 보정된 gyro vector를 반환.
 // return a smoothed and corrected gyro vector using the latest ins data (which may not have been consumed by the EKF yet)
 Vector3f AP_AHRS::get_gyro_latest(void) const
 {
@@ -37,6 +38,7 @@ Vector3f AP_AHRS::get_gyro_latest(void) const
     return AP::ins().get_gyro(primary_gyro) + get_gyro_drift();
 }
 
+// 새로운 trim 설정
 // set_trim
 void AP_AHRS::set_trim(const Vector3f &new_trim)
 {
@@ -48,6 +50,7 @@ void AP_AHRS::set_trim(const Vector3f &new_trim)
     _trim.set_and_save(trim);
 }
 
+// roll과 pitch trim을 합해서 10도까지 조정하기
 // add_trim - adjust the roll and pitch trim up to a total of 10 degrees
 void AP_AHRS::add_trim(float roll_in_radians, float pitch_in_radians, bool save_to_eeprom)
 {
@@ -66,6 +69,7 @@ void AP_AHRS::add_trim(float roll_in_radians, float pitch_in_radians, bool save_
     }
 }
 
+// flight control 보드의 orientation 설정
 // Set the board mounting orientation from AHRS_ORIENTATION parameter
 void AP_AHRS::update_orientation()
 {
@@ -89,6 +93,7 @@ void AP_AHRS::update_orientation()
     AP::compass().set_board_orientation(orientation);
 }
 
+// ADS와 GPS의 ground speed vector를 상보필터로 적용하여 ground speed 얻기
 // return a ground speed estimate in m/s
 Vector2f AP_AHRS_DCM::groundspeed_vector(void)
 {
@@ -156,6 +161,7 @@ Vector2f AP_AHRS_DCM::groundspeed_vector(void)
     return Vector2f(0.0f, 0.0f);
 }
 
+// body_to_ned 회전 행렬로부터 roll/pitch/yaw의 sin, cos를 계산
 /*
   calculate sin and cos of roll/pitch/yaw from a body_to_ned rotation matrix
  */
@@ -203,6 +209,7 @@ void AP_AHRS::calc_trig(const Matrix3f &rot,
     }
 }
 
+// 최신 attitude 기반으로 cos_roll, cos_pitch를 재계산
 // update_trig - recalculates _cos_roll, _cos_pitch, etc based on latest attitude
 //      should be called after _dcm_matrix is updated
 void AP_AHRS::update_trig(void)
@@ -212,6 +219,7 @@ void AP_AHRS::update_trig(void)
               _sin_roll, _sin_pitch, _sin_yaw);
 }
 
+// (Degrees * 100)로 만들기 위해서 100을 곱한다. 
 /*
   update the centi-degree values
  */
@@ -224,6 +232,7 @@ void AP_AHRS::update_cd_values(void)
         yaw_sensor += 36000;
 }
 
+// pitch trim으로 회전 view 생성
 /*
   create a rotated view of AP_AHRS with optional pitch trim
  */
@@ -296,6 +305,7 @@ void AP_AHRS::update_AOA_SSA(void)
 #endif
 }
 
+// EF -> BF으로 2D vector를 회전
 // rotate a 2D vector from earth frame to body frame
 Vector2f AP_AHRS::earth_to_body2D(const Vector2f &ef) const
 {

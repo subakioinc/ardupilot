@@ -47,6 +47,7 @@ public:
 
     CLASS_NO_COPY(AP_AHRS_Backend);
 
+    // ---- backend의 출력값 : roll, pitch, yaw, DCM, gyro, accel  ------
     // structure to retrieve results from backends:
     struct Estimates {
         float roll_rad;
@@ -84,12 +85,15 @@ public:
     // requires_position should be true if horizontal position configuration should be checked
     virtual bool pre_arm_check(bool requires_position, char *failure_msg, uint8_t failure_msg_len) const = 0;
 
+    // prearm 체크에 사용하기 위해서 모든 IMU가 비슷한 attitude 값을 보여주는지 확인
     // check all cores providing consistent attitudes for prearm checks
     virtual bool attitudes_consistent(char *failure_msg, const uint8_t failure_msg_len) const { return true; }
 
+    // EKF lane 변경하기 가능 여부 (현재 core EKF가 fail되면 다른 EKF core로 갈아타기 가능)
     // see if EKF lane switching is possible to avoid EKF failsafe
     virtual void check_lane_switch(void) {}
 
+    // compass없이 다른 센서가 yaw 값을 준다면 pre-arm에서 compass 검사 통과시키기 
     // check if non-compass sensor is providing yaw.  Allows compass pre-arm checks to be bypassed
     virtual bool using_noncompass_for_yaw(void) const { return false; }
 
