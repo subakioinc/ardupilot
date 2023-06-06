@@ -1422,6 +1422,9 @@ void NavEKF3_core::alignMagStateDeclination()
         return;
     }
 
+/*
+자기 편각(magnetic declination)은 지구의 자기장과 지리적 북극의 방향 사이의 각도입니다. 지구의 자기장은 끊임없이 변화하고 있으므로, 자기 편각은 시간과 장소에 따라 다릅니다. 북반구에서는 자기 편각이 일반적으로 동쪽으로 향하고 있습니다. 예를 들어, 서울의 경우 2023년 6월 6일 기준으로 자기 편각은 12도 동쪽입니다. 이는 자석의 북쪽 끝이 진북극에서 12도 동쪽을 가리키고 있음을 의미합니다.
+*/
     // get the magnetic declination
     ftype magDecAng = MagDeclination();
 

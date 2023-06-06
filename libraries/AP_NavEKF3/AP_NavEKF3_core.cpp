@@ -522,7 +522,7 @@ bool NavEKF3_core::InitialiseFilterBootstrap(void)
     readGpsYawData();
     readBaroData();
 
-    // 초기화 성공적으로 수행 후에 마지막으로 IMU 데이터를 buffer에 채워준다. 구동될때 IMU 데이터가 없으면 pause되기 쉽다.
+    // 초기화 성공적으로 수행 후에 마지막으로 IMU 데이터를 buffer에 채워졌는지 확인한다. 만약 IMU 데이터가 채워지지 않은 상태로 구동되면 pause되기 쉽다.
     if (statesInitialised) {
         // we are initialised, but we don't return true until the IMU
         // buffer has been filled. This prevents a timing
@@ -550,7 +550,7 @@ bool NavEKF3_core::InitialiseFilterBootstrap(void)
     // TODO we should average accel readings over several cycles
     initAccVec = dal.ins().get_accel(accel_index_active).toftype();
 
-    // roll, pitch 계산을 위해서 가속도 벡터를 normalize
+    // 가속도 센서에서 읽은 값으로 roll, pitch 계산
     // normalise the acceleration vector
     ftype pitch=0, roll=0;
     if (initAccVec.length() > 0.001f) {
@@ -600,7 +600,7 @@ bool NavEKF3_core::InitialiseFilterBootstrap(void)
     // initialise the covariance matrix
     CovarianceInit();
 
-    // 현재 EKF state를 output data 변수에 넣기
+    // output data 변수에 현재 EKF state를 할당
     // reset the output predictor states
     StoreOutputReset();
 
@@ -1110,6 +1110,7 @@ void NavEKF3_core::calcOutputStates()
     }
 }
 
+// 대수식으로 predicted state covariance 행렬을 계산
 /*
  * Calculate the predicted state covariance matrix using algebraic equations generated using SymPy
  * See AP_NavEKF3/derivation/main.py for derivation
@@ -1913,6 +1914,7 @@ void NavEKF3_core::zeroCols(Matrix24 &covMat, uint8_t first, uint8_t last)
     }
 }
 
+// output data에 현재 EFK state값 할당하는 것이 reset
 // reset the output data to the current EKF state
 void NavEKF3_core::StoreOutputReset()
 {
@@ -2069,6 +2071,7 @@ void NavEKF3_core::ConstrainVariances()
     }
 }
 
+// WMM 테이블과 지정한 limit을 사용하여 low < state < high 로 제한
 // constrain states using WMM tables and specified limit
 void NavEKF3_core::MagTableConstrain(void)
 {
@@ -2085,6 +2088,8 @@ void NavEKF3_core::MagTableConstrain(void)
                                                    table_earth_field_ga.z+limit_ga);
 }
 
+// 범위를 넘어가는 값이 들어가지 않도록 low < state < high 로 제한
+// state : quaternions, velocity, position, height, gyro bias, accelerometer bias, earth magnetic field, body magnetic field, wind velocity, terrain  
 // constrain states to prevent ill-conditioning
 void NavEKF3_core::ConstrainStates()
 {
@@ -2118,6 +2123,7 @@ void NavEKF3_core::ConstrainStates()
     }
 }
 
+// NED 지구 회전 vecotr (rad/sec)를 계산. 위도에 따라 달라지므로 현재 위도값을 전달. 
 // calculate the NED earth spin vector in rad/sec
 void NavEKF3_core::calcEarthRateNED(Vector3F &omega, int32_t latitude) const
 {
@@ -2127,6 +2133,7 @@ void NavEKF3_core::calcEarthRateNED(Vector3F &omega, int32_t latitude) const
     omega.z  = -earthRate*sinF(lat_rad);
 }
 
+// 하나의 mag센서의 값으로부터 yaw를 설정
 // set yaw from a single magnetometer sample
 void NavEKF3_core::setYawFromMag()
 {
@@ -2158,10 +2165,11 @@ void NavEKF3_core::setYawFromMag()
     Vector3F magMeasNED = Tbn_zeroYaw * magDataDelayed.mag;
     ftype yawAngMeasured = wrap_PI(-atan2F(magMeasNED.y, magMeasNED.x) + MagDeclination());
 
+    // yaw를 새로 계산했으므로 quaternion states와 공분산을 업데이트해야한다.
     // update quaternion states and covariances
     resetQuatStateYawOnly(yawAngMeasured, sq(MAX(frontend->_yawNoise, 1.0e-2f)), order);
 }
-
+// 자기장 states와 관련된 공분산을 업데이트한다.이때 mag센서와 
 // update mag field states and associated variances using magnetomer and declination data
 void NavEKF3_core::resetMagFieldStates()
 {

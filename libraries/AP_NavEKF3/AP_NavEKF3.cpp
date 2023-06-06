@@ -804,7 +804,7 @@ bool NavEKF3::InitialiseFilter(void)
             }
         }
 
-        // EKF core를 할당하기 위해서 필요한 memroy 체크 
+        // EKF core를 할당하기 위해서 필요한 memory 체크 
         // check if there is enough memory to create the EKF cores
         if (AP::dal().available_memory() < sizeof(NavEKF3_core)*num_cores + 4096) {
             GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "EKF3 not enough memory");
@@ -858,7 +858,7 @@ bool NavEKF3::InitialiseFilter(void)
     // invalidate shared origin
     common_origin_valid = false;
 
-    // 각 core에 대한 bootstrap을 초기화
+    // 각 core가 사용하는 대한 필터에 대한 초기화
     // initialise the cores. We return success only if all cores
     // initialise successfully
     bool ret = true;
@@ -905,6 +905,7 @@ bool NavEKF3::coreBetterScore(uint8_t new_core, uint8_t current_core) const
     return coreRelativeErrors[new_core] < coreRelativeErrors[current_core];
 }
 
+// 새로운 IMU 데이터가 들어올때마다 실행. 
 /* 
   Update Filter States - this should be called whenever new IMU data is available
   Execution speed governed by SCHED_LOOP_RATE
@@ -929,9 +930,11 @@ void NavEKF3::UpdateFilter(void)
             AP::dal().ekf_low_time_remaining(AP_DAL::EKFType::EKF3, i)) {
             allow_state_prediction = false;
         }
+        // 각 core에 대해서 filter update 실행
         core[i].UpdateFilter(allow_state_prediction);
     }
 
+    // 현재 선택된 core가 error가 있고 unhealty한 상태라면 healty core를 선택한다.
     // If the current core selected has a bad error score or is unhealthy, switch to a healthy core with the lowest fault score
     // Don't start running the check until the primary core has started returned healthy for at least 10 seconds to avoid switching
     // due to initial alignment fluctuations and race conditions
@@ -945,11 +948,13 @@ void NavEKF3::UpdateFilter(void)
 
     const bool armed  = AP::dal().get_armed();
 
+    // core 선정은 드론이 arm되고 난 이후에 유효하다. 
     // core selection is only available after the vehicle is armed, else forced to lane 0 if its healthy
     if (runCoreSelection && armed) {
         // update this instance's error scores for all active cores and get the primary core's error score
         float primaryErrorScore = updateCoreErrorScores();
 
+        // core에 대한 error값 업데이트
         // update the accumulated relative error scores for all active cores
         updateCoreRelativeErrors();
 
@@ -984,6 +989,7 @@ void NavEKF3::UpdateFilter(void)
         }
         altCoreAvailable = newPrimaryIndex != primary;
 
+        // core를 바꾸는 기준 : error가 많고, unhealty, 더 낳은 core가 유효
         // Switch cores if another core is available and the active primary core meets one of the following conditions - 
         // 1. has a bad error score
         // 2. is unhealthy
