@@ -1110,7 +1110,8 @@ void NavEKF3_core::calcOutputStates()
     }
 }
 
-// 대수식으로 predicted state covariance 행렬을 계산
+// 대수식으로 predicted state covariance 행렬을 계산(이 대수식은 python으로 자동생성)
+// 인자 : rotVarVectpr은 vector에 대한 포인터. 이 벡터는 quaternion states의 earth frame 불확실성 분산을 정의하며 quaternion state covariances의 reset만을 위해서 사용
 /*
  * Calculate the predicted state covariance matrix using algebraic equations generated using SymPy
  * See AP_NavEKF3/derivation/main.py for derivation

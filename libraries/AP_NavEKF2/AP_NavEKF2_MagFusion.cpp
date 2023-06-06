@@ -708,8 +708,8 @@ void NavEKF2_core::FuseMagnetometer()
     }
 }
 
-
-/*
+// mag센서에서 측정한 heading을 fusion을 수행하여 결과적으로 orientation을 수정한다. 
+/* 
  * Fuse magnetic heading measurement using explicit algebraic equations generated with Matlab symbolic toolbox.
  * The script file used to generate these and other equations in this filter can be found here:
  * https://github.com/priseborough/InertialNav/blob/master/derivations/RotationVectorAttitudeParameterisation/GenerateNavFilterEquations.m
@@ -725,9 +725,11 @@ void NavEKF2_core::fuseEulerYaw()
     ftype q2 = stateStruct.quat[2];
     ftype q3 = stateStruct.quat[3];
 
+    // compass 측정 error 분산(compass 측정시 감내할 수 있는 error 분산을 지정)
     // compass measurement error variance (rad^2) set to parameter value as a default
     ftype R_YAW = sq(frontend->_yawNoise);
 
+    // measurement jacobian을 계산. 예측한 raw와 zero yaw body를 결정
     // calculate observation jacobian, predicted yaw and zero yaw body to earth rotation matrix
     // determine if a 321 or 312 Euler sequence is best
     ftype predicted_yaw;
@@ -860,12 +862,14 @@ void NavEKF2_core::fuseEulerYaw()
         }
     }
 
+    // innovation : 예측한 yaw와 측정한 yaw 차이 
     // Calculate the innovation
     ftype innovation = wrap_PI(predicted_yaw - measured_yaw);
 
     // Copy raw value to output variable used for data logging
     innovYaw = innovation;
 
+    // innovation 분산과 Kalman gains을 계산. 
     // Calculate innovation variance and Kalman gains, taking advantage of the fact that only the first 3 elements in H are non zero
     ftype PH[3];
     ftype varInnov = R_YAW;
@@ -877,7 +881,7 @@ void NavEKF2_core::fuseEulerYaw()
         varInnov += H_YAW[rowIndex]*PH[rowIndex];
     }
     ftype varInnovInv;
-    if (varInnov >= R_YAW) {
+    if (varInnov >= R_YAW) { // 계산한 innovation 분산이 compass 측정 error 분산보다 크면 : OK 
         varInnovInv = 1.0f / varInnov;
         // output numerical health status
         faultStatus.bad_yaw = false;
@@ -890,6 +894,7 @@ void NavEKF2_core::fuseEulerYaw()
         return;
     }
 
+    // kalman gain 계산
     // calculate Kalman gain
     for (uint8_t rowIndex=0; rowIndex<=stateIndexLim; rowIndex++) {
         Kfusion[rowIndex] = 0.0f;
@@ -899,9 +904,11 @@ void NavEKF2_core::fuseEulerYaw()
         Kfusion[rowIndex] *= varInnovInv;
     }
 
+    // innovation test ratio 계산하기. (예상-측정)의 차이가 분포를 넘어서는 경우 mag fail이 된다. (지상에서는 근처에 외관을 일으키는 물체가 있을 확률이 크고 비행중에 이렇게 되면 mag 센서가 고장났을 확률이 크다.) 
     // calculate the innovation test ratio
     yawTestRatio = sq(innovation) / (sq(MAX(0.01f * (ftype)frontend->_yawInnovGate, 1.0f)) * varInnov);
 
+    // innovation 분산이 적용 가능한 범위인지 테스트. 
     // Declare the magnetometer unhealthy if the innovation test fails
     if (yawTestRatio > 1.0f) {
         magHealth = false;
@@ -914,6 +921,7 @@ void NavEKF2_core::fuseEulerYaw()
         magHealth = true;
     }
 
+    // innovation의 최대 값을 조정하는 이유 : 너무 크게 보정하지 않기 위해서.
     // limit the innovation so that initial corrections are not too large
     if (innovation > 0.5f) {
         innovation = 0.5f;
@@ -921,13 +929,15 @@ void NavEKF2_core::fuseEulerYaw()
         innovation = -0.5f;
     }
 
+    // 공분산을 보정. P = P - K*H*P 식을 이용. 
     // correct the covariance using P = P - K*H*P taking advantage of the fact that only the first 3 elements in H are non zero
     // calculate K*H*P
     for (uint8_t row = 0; row <= stateIndexLim; row++) {
         for (uint8_t column = 0; column <= 2; column++) {
             KH[row][column] = Kfusion[row] * H_YAW[column];
         }
-    }
+    } // KH 계산하기
+    // KHP 계산하기
     for (uint8_t row = 0; row <= stateIndexLim; row++) {
         for (uint8_t column = 0; column <= stateIndexLim; column++) {
             ftype tmp = KH[row][0] * P[0][column];
@@ -937,6 +947,7 @@ void NavEKF2_core::fuseEulerYaw()
         }
     }
 
+    // KHP가 P보다 큰 경우 update 진행하지 않는다. 
     // Check that we are not going to drive any variances negative and skip the update if so
     bool healthyFusion = true;
     for (uint8_t i= 0; i<=stateIndexLim; i++) {
@@ -944,7 +955,9 @@ void NavEKF2_core::fuseEulerYaw()
             healthyFusion = false;
         }
     }
+    // 공분산 matrixt 업데이트 및 states 업데이트
     if (healthyFusion) {
+        // 공분산 업데이트
         // update the covariance matrix
         for (uint8_t i= 0; i<=stateIndexLim; i++) {
             for (uint8_t j= 0; j<=stateIndexLim; j++) {
@@ -959,14 +972,17 @@ void NavEKF2_core::fuseEulerYaw()
         // zero the attitude error state - by definition it is assumed to be zero before each observation fusion
         stateStruct.angErr.zero();
 
+        // state vector를 보정
         // correct the state vector
         for (uint8_t i=0; i<=stateIndexLim; i++) {
             statesArray[i] -= Kfusion[i] * innovation;
         }
 
+        // misalignment vector를 이용하여 그만큼 회전시켜서 보정해준다. 
         // the first 3 states represent the angular misalignment vector.
         // This is used to correct the estimated quaternion on the current time step
         stateStruct.quat.rotate(stateStruct.angErr);
+
 
         // record fusion event
         faultStatus.bad_yaw = false;
