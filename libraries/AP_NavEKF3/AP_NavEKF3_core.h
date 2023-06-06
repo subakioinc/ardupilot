@@ -721,6 +721,7 @@ private:
     void correctDeltaAngle(Vector3F &delAng, ftype delAngDT, uint8_t gyro_index);
     void correctDeltaVelocity(Vector3F &delVel, ftype delVelDT, uint8_t accel_index);
 
+    // IMU센서를 이용하여 각속도(angle dt), 가속도(velocity dt) 를 측정
     // update IMU delta angle and delta velocity measurements
     void readIMUData();
 

@@ -367,7 +367,10 @@ void NavEKF3_core::readMagData()
 /********************************************************
 *                Inertial Measurements                  *
 ********************************************************/
-
+/*
+IMU센서를 이용하여 각속도, 가속도 측정. 100Hz로 다운샘플링(실제로 더 빠르게 들어오느 것을 100Hz로 처리). EKF에서 사용하는 buffer에 저장을 위해서 100Hz로 처리. 
+만약 IMU 데이터가 100Hz보다 늦게 들어오면 upsampling 수행. 
+*/
 /*
  *  Read IMU delta angle and delta velocity measurements and downsample to 100Hz
  *  for storage in the data buffers used by the EKF. If the IMU data arrives at
@@ -387,6 +390,7 @@ void NavEKF3_core::readIMUData()
 
     uint8_t accel_active, gyro_active;
 
+    // primary gyro와 accel센서 index 가지고 오기
     if (ins.use_accel(imu_index)) {
         accel_active = imu_index;
     } else {
@@ -420,10 +424,12 @@ void NavEKF3_core::readIMUData()
     // run movement check using IMU data
     updateMovementCheck();
 
+    // accel센서에서 가속도 읽기
     readDeltaVelocity(accel_index_active, imuDataNew.delVel, imuDataNew.delVelDT);
     accelPosOffset = ins.get_imu_pos_offset(accel_index_active).toftype();
     imuDataNew.accel_index = accel_index_active;
     
+    // gyro센서에서 각속도 읽기
     // Get delta angle data from primary gyro or primary if not available
     readDeltaAngle(gyro_index_active, imuDataNew.delAng, imuDataNew.delAngDT);
     imuDataNew.delAngDT = MAX(imuDataNew.delAngDT, 1.0e-4f);
@@ -442,15 +448,18 @@ void NavEKF3_core::readIMUData()
     imuDataDownSampledNew.gyro_index = imuDataNew.gyro_index;
     imuDataDownSampledNew.accel_index = imuDataNew.accel_index;
 
-    // Rotate quaternon atitude from previous to new and normalise.
+    // angle 변화만큼 attitude 회전시켜주기
+    // Rotate quaternion atitude from previous to new and normalise.
     // Accumulation using quaternions prevents introduction of coning errors due to downsampling
     imuQuatDownSampleNew.rotate(imuDataNew.delAng);
     imuQuatDownSampleNew.normalize();
 
+    // 현재 quaternion으로부터 회전 행렬을 얻기
     // Rotate the latest delta velocity into body frame at the start of accumulation
     Matrix3F deltaRotMat;
     imuQuatDownSampleNew.rotation_matrix(deltaRotMat);
 
+    // 속도 dt 누적기에 속도 dt를 적용하기
     // Apply the delta velocity to the delta velocity accumulator
     imuDataDownSampledNew.delVel += deltaRotMat*imuDataNew.delVel;
 
@@ -458,6 +467,10 @@ void NavEKF3_core::readIMUData()
     framesSincePredict++;
 
     /*
+      새로운 EKF의 prediction 단계 시작이 가능한지 체크. 
+      저장한 IMU 데이터를 prediction 단계에서 사용.  
+    */
+    /* 
      * If the target EKF time step has been accumulated, and the frontend has allowed start of a new predict cycle,
      * then store the accumulated IMU data to be used by the state prediction, ignoring the frontend permission if more
      * than twice the target time has lapsed. Adjust the target EKF step time threshold to allow for timing jitter in the
@@ -472,16 +485,20 @@ void NavEKF3_core::readIMUData()
         // Time stamp the data
         imuDataDownSampledNew.time_ms = imuSampleTime_ms;
 
+        // EKF에서 사용하는 Queue IMU buffer에 저장.
         // Write data to the FIFO IMU buffer
         storedIMU.push_youngest_element(imuDataDownSampledNew);
 
+        // EKF의 평균 time step 계산
         // calculate the achieved average time step rate for the EKF using a combination spike and LPF
         ftype dtNow = constrain_ftype(0.5f*(imuDataDownSampledNew.delAngDT+imuDataDownSampledNew.delVelDT),0.5f * dtEkfAvg, 2.0f * dtEkfAvg);
         dtEkfAvg = 0.98f * dtEkfAvg + 0.02f * dtNow;
 
+        // 다운 샘플링
         // do an addtional down sampling for data used to sample XY body frame drag specific forces
         SampleDragData(imuDataDownSampledNew);
 
+        // 버터에 넣었으니 imu 변수 초기화
         // zero the accumulated IMU data and quaternion
         imuDataDownSampledNew.delAng.zero();
         imuDataDownSampledNew.delVel.zero();
