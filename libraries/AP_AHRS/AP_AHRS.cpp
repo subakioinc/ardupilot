@@ -583,6 +583,7 @@ void AP_AHRS::update_EKF3(void)
             EKF3.getGyroBias(-1,_gyro_drift);
             _gyro_drift = -_gyro_drift;
 
+            // _gyro_estimate는 gyro drift를 보정.
             // use the same IMU as the primary EKF and correct for gyro drift
             _gyro_estimate = _ins.get_gyro(primary_gyro) + _gyro_drift;
 
@@ -590,6 +591,7 @@ void AP_AHRS::update_EKF3(void)
             Vector3f &abias = _accel_bias;
             EKF3.getAccelBias(-1,abias);
 
+            // 가속도 earth frame 계산하기 : 가속도 사용
             // use the primary IMU for accel earth frame
             Vector3f accel = _ins.get_accel(primary_accel);
             accel -= abias;
