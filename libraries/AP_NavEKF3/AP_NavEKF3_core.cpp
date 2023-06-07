@@ -718,7 +718,7 @@ void NavEKF3_core::UpdateFilter(bool predict)
     // Check arm status and perform required checks and mode changes
     controlFilterModes();
 
-    // IMU 센서값 읽기 : measurement (angle, velocity)
+    // IMU 센서값 읽기 : measurement (각속도, 가속도)
     // read IMU data as delta angles and velocities
     readIMUData();
 
@@ -726,11 +726,11 @@ void NavEKF3_core::UpdateFilter(bool predict)
     // 추정하기 위해서 EKF 식을 실행
     // Run the EKF equations to estimate at the fusion time horizon if new IMU data is available in the buffer
     if (runUpdates) {
-        // 지연 시간 horizon으로부터 IMU 데이터를 사용해서 states를 추정
+        // IMU 데이터를 사용해서 states를 업데이트(vel, position, quaternion)
         // Predict states using IMU data from the delayed time horizon
         UpdateStrapdownEquationsNED();
 
-        // 공분산 prediction 
+        // 공분산 prediction.  nextP = FPF' + Q 계산 
         // Predict the covariance growth
         CovariancePrediction(nullptr);
 
@@ -833,7 +833,7 @@ void NavEKF3_core::correctDeltaVelocity(Vector3F &delVel, ftype delVelDT, uint8_
 void NavEKF3_core::UpdateStrapdownEquationsNED()
 {
     // 이전 attitude로부터 회전한 quaternion states를 업데이트
-    // 방법 : 회전한 각도 적용, normalise for 지도 회전 rate
+    // 방법 : 회전한 각도 적용,  지구 회전 rate 보정
     // update the quaternion states by rotating from the previous attitude through
     // the delta angle rotation quaternion and normalise
     // apply correction for earth's rotation rate
@@ -1112,7 +1112,7 @@ void NavEKF3_core::calcOutputStates()
     }
 }
 
-// P = FPF' + Q 계산 (nextP = FPF' + Q)
+// nextP = FPF' + Q 계산 (nextP = FPF' + Q)
 // 대수식으로 predicted state covariance 행렬을 계산(이 대수식은 python으로 자동생성)
 // 인자 : rotVarVectpr은 vector에 대한 포인터. 이 벡터는 quaternion states의 earth frame 불확실성 분산을 정의하며 quaternion state covariances의 reset만을 위해서 사용
 /*

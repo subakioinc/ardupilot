@@ -446,10 +446,12 @@ void NavEKF3_core::SelectVelPosFusion()
     }
 #endif // EK3_FEATURE_EXTERNAL_NAV
 
+    // GPS에서 위치와 Yaw 데이터 읽기
     // Read GPS data from the sensor
     readGpsData();
     readGpsYawData();
 
+    // GPS 데이터 버퍼에서 꺼내오기
     // get data that has now fallen behind the fusion time horizon
     gpsDataToFuse = storedGPS.recall(gpsDataDelayed,imuDataDelayed.time_ms);
     if (gpsDataToFuse) {
@@ -517,6 +519,7 @@ void NavEKF3_core::SelectVelPosFusion()
         realignYawGPS();
     }
 
+    // 높이 퓨전 : baro, range finder, GPS 퓨전
     // Select height data to be fused from the available baro, range finder and GPS sources
     selectHeightForFusion();
 
@@ -585,6 +588,7 @@ void NavEKF3_core::SelectVelPosFusion()
         }
     }
 
+    // 속도, position을 퓨전
     // perform fusion
     if (fuseVelData || fusePosData || fuseHgtData) {
         FuseVelPosNED();
@@ -1048,9 +1052,11 @@ void NavEKF3_core::FuseVelPosNED()
 *                   MISC FUNCTIONS                      *
 ********************************************************/
 
+// baro, range finder, GPS를 퓨전
 // select the height measurement to be fused from the available baro, range finder and GPS sources
 void NavEKF3_core::selectHeightForFusion()
 {
+    // range finder 데이터 가져오기
     // Read range finder data and check for new data in the buffer
     // This data is used by both height and optical flow fusion processing
     readRangeFinder();
@@ -1071,6 +1077,7 @@ void NavEKF3_core::selectHeightForFusion()
         }
     }
 
+    // baro 데이터 가져오기
     // read baro height data from the sensor and check for new data in the buffer
     readBaroData();
     baroDataToFuse = storedBaro.recall(baroDataDelayed, imuDataDelayed.time_ms);
@@ -1162,6 +1169,7 @@ void NavEKF3_core::selectHeightForFusion()
         }
     }
 
+    // EKF로 높이 보정
     // If we are not using GPS as the primary height sensor, correct EKF origin height so that
     // combined local NED position height and origin height remains consistent with the GPS altitude
     // This also enables the GPS height to be used as a backup height source

@@ -814,13 +814,16 @@ void NavEKF3_core::correctEkfOriginHeight()
     }
     lastOriginHgtTime_ms = imuDataDelayed.time_ms;
 
+    // measure 분산 계산하기
     // calculate the observation variance assuming EKF error relative to datum is independent of GPS observation error
     // when not using GPS as height source
     ftype originHgtObsVar = sq(gpsHgtAccuracy) + P[9][9];
 
+    // gain 구하기
     // calculate the correction gain
     ftype gain = ekfOriginHgtVar / (ekfOriginHgtVar + originHgtObsVar);
 
+    // innovation 구하기
     // calculate the innovation
     ftype innovation = - stateStruct.position.z - gpsDataDelayed.hgt;
 

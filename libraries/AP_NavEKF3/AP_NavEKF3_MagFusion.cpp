@@ -377,7 +377,7 @@ void NavEKF3_core::SelectMagFusion()
         magTimeout = true;
     }
 
-    // 새롱누 Mag 데이터 가져오기
+    // *** 새로운 Mag 데이터 가져오기
     if (yaw_source != AP_NavEKF_Source::SourceYaw::GPS_COMPASS_FALLBACK) {
         // check for and read new magnetometer measurements. We don't
         // read for GPS_COMPASS_FALLBACK as it has already been read
@@ -413,7 +413,7 @@ void NavEKF3_core::SelectMagFusion()
             // zero the test ratio output from the inactive 3-axis magnetometer fusion
             magTestRatio.zero();
 
-        } else {  // mag 센서 사용 가능한 경우 -- 진짜 fusion
+        } else {  // *** mag 센서 사용 가능한 경우 -- 진짜 fusion
             // if we are not doing aiding with earth relative observations (eg GPS) then the declination is
             // maintained by fusing declination as a synthesised observation
             // We also fuse declination if we are using the WMM tables
@@ -421,6 +421,7 @@ void NavEKF3_core::SelectMagFusion()
                 (frontend->_mag_ef_limit > 0 && have_table_earth_field)) {
                 FuseDeclination(0.34f);
             }
+            // *** 실제 fusion
             // fuse the three magnetometer componenents using sequential fusion for each axis
             FuseMagnetometer();
             // zero the test ratio output from the inactive simple magnetometer yaw fusion
@@ -492,6 +493,7 @@ void NavEKF3_core::FuseMagnetometer()
     magYbias = stateStruct.body_magfield[1];
     magZbias = stateStruct.body_magfield[2];
 
+    // Mag measurements prediciton을 초기화
     // rotate predicted earth components into body axes and calculate
     // predicted measurements
     DCM[0][0] = q0*q0 + q1*q1 - q2*q2 - q3*q3;
@@ -507,11 +509,13 @@ void NavEKF3_core::FuseMagnetometer()
     MagPred[1] = DCM[1][0]*magN + DCM[1][1]*magE  + DCM[1][2]*magD + magYbias;
     MagPred[2] = DCM[2][0]*magN + DCM[2][1]*magE  + DCM[2][2]*magD + magZbias;
 
+    // *** Innovation Inno = z - H 
     // calculate the measurement innovation for each axis
     for (uint8_t i = 0; i<=2; i++) {
         innovMag[i] = MagPred[i] - magDataDelayed.mag[i];
     }
 
+    // 측정 noise : R_MAG 
     // scale magnetometer observation error with total angular rate to allow for timing errors
     R_MAG = sq(constrain_ftype(frontend->_magNoise, 0.01f, 0.5f)) + sq(frontend->magVarRateScale*imuDataDelayed.delAng.length() / imuDataDelayed.delAngDT);
 
@@ -862,6 +866,7 @@ void NavEKF3_core::FuseMagnetometer()
             }
         }
         if (healthyFusion) {
+            // ***  nextP = P - KHP 업데이트 
             // update the covariance matrix
             for (uint8_t i= 0; i<=stateIndexLim; i++) {
                 for (uint8_t j= 0; j<=stateIndexLim; j++) {
@@ -873,6 +878,7 @@ void NavEKF3_core::FuseMagnetometer()
             ForceSymmetry();
             ConstrainVariances();
 
+            // *** 여기서 x = x + K* Innovation measurement update
             // correct the state vector
             for (uint8_t j= 0; j<=stateIndexLim; j++) {
                 statesArray[j] = statesArray[j] - Kfusion[j] * innovMag[obsIndex];
