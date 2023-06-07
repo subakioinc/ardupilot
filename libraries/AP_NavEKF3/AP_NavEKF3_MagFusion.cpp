@@ -190,6 +190,7 @@ void NavEKF3_core::alignYawAngle(const yaw_elements &yawAngData)
 *                   FUSE MEASURED_DATA                  *
 ********************************************************/
 
+// mag센서 데이터 fusion
 // select fusion of magnetometer data
 void NavEKF3_core::SelectMagFusion()
 {
@@ -204,6 +205,7 @@ void NavEKF3_core::SelectMagFusion()
         yaw_source_reset = true;
     }
 
+    // 움직일때 yaw 각도를 yawAngDataStatic에 저장하여 움직이지 않을때 reference로 사용
     // Store yaw angle when moving for use as a static reference when not moving
     if (!onGroundNotMoving) {
         if (fabsF(prevTnb[0][2]) < fabsF(prevTnb[1][2])) {
@@ -219,6 +221,7 @@ void NavEKF3_core::SelectMagFusion()
         yawAngDataStatic.time_ms = imuDataDelayed.time_ms;
     }
 
+    // yaw 센서를 사용하고 있지 않는 경우 GSF yaw estimator의 output을 사용하여 yaw reset을 시도.
     // Handle case where we are not using a yaw sensor of any type and attempt to reset the yaw in
     // flight using the output from the GSF yaw estimator.
     if ((yaw_source == AP_NavEKF_Source::SourceYaw::GSF) ||
@@ -258,6 +261,7 @@ void NavEKF3_core::SelectMagFusion()
         return;
     }
 
+    // GPS로 yaw를 사용하는 경우 처리
     // Handle case where we are using GPS yaw sensor instead of a magnetomer
     if (yaw_source == AP_NavEKF_Source::SourceYaw::GPS || yaw_source == AP_NavEKF_Source::SourceYaw::GPS_COMPASS_FALLBACK) {
         bool have_fused_gps_yaw = false;
@@ -373,6 +377,7 @@ void NavEKF3_core::SelectMagFusion()
         magTimeout = true;
     }
 
+    // 새롱누 Mag 데이터 가져오기
     if (yaw_source != AP_NavEKF_Source::SourceYaw::GPS_COMPASS_FALLBACK) {
         // check for and read new magnetometer measurements. We don't
         // read for GPS_COMPASS_FALLBACK as it has already been read
@@ -380,9 +385,11 @@ void NavEKF3_core::SelectMagFusion()
         readMagData();
     }
 
+    // fusion 가능한 상태인지 체크 (mag 센서와 데이터)
     // check for availability of magnetometer or other yaw data to fuse
     magDataToFuse = storedMag.recall(magDataDelayed,imuDataDelayed.time_ms);
 
+    //yaw와 magnetic field states를 reset이 필요한지 확인
     // Control reset of yaw and magnetic field states if we are using compass data
     if (magDataToFuse) {
         if (yaw_source_reset && (yaw_source == AP_NavEKF_Source::SourceYaw::COMPASS ||
@@ -393,10 +400,12 @@ void NavEKF3_core::SelectMagFusion()
         controlMagYawReset();
     }
 
+    // fusion이 가능한 상태면 새로운 fusion cycle을 시작한다.
     // determine if conditions are right to start a new fusion cycle
     // wait until the EKF time horizon catches up with the measurement
     bool dataReady = (magDataToFuse && statesInitialised && use_compass() && yawAlignComplete);
     if (dataReady) {
+        // 자기장 states를 사용할수 없는 경우 간단하게 declination 방법 사용
         // use the simple method of declination to maintain heading if we cannot use the magnetic field states
         if(inhibitMagStates || magStateResetRequest || !magStateInitComplete) {
             fuseEulerYaw(yawFusionMethod::MAGNETOMETER);
@@ -404,7 +413,7 @@ void NavEKF3_core::SelectMagFusion()
             // zero the test ratio output from the inactive 3-axis magnetometer fusion
             magTestRatio.zero();
 
-        } else {
+        } else {  // mag 센서 사용 가능한 경우 -- 진짜 fusion
             // if we are not doing aiding with earth relative observations (eg GPS) then the declination is
             // maintained by fusing declination as a synthesised observation
             // We also fuse declination if we are using the WMM tables
@@ -1228,6 +1237,7 @@ bool NavEKF3_core::fuseEulerYaw(yawFusionMethod method)
     return true;
 }
 
+// 편각(declination angle) : https://ko.wikipedia.org/wiki/%ED%8E%B8%EA%B0%81_(%EC%A7%80%EA%B5%AC%EA%B3%BC%ED%95%99)
 /*
  * Fuse declination angle using explicit algebraic equations generated with Matlab symbolic toolbox.
  * The script file used to generate these and other equations in this filter can be found here:

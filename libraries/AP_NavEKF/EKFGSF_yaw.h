@@ -9,18 +9,20 @@
 
 #define IMU_DT_MIN_SEC 0.001f // Minimum delta time between IMU samples (sec)
 
+// GSF :Gaussian Sum Filter, yaw 단일 state에 대해서만 계산
 class EKFGSF_yaw
 {
 public:
     // Constructor
     EKFGSF_yaw();
 
+    // IMU의 dt angle, dt vel을 이용하여 update
     // Update Filter States - this should be called whenever new IMU data is available
     void update(const Vector3F &delAng,// IMU delta angle rotation vector measured in body frame (rad)
                 const Vector3F &delVel,// IMU delta velocity vector measured in body frame (m/s)
                 const ftype delAngDT, // time interval that delAng was integrated over (sec) - must be no less than IMU_DT_MIN_SEC
                 const ftype delVelDT, // time interval that delVel was integrated over (sec) - must be no less than IMU_DT_MIN_SEC
-                bool runEKF,          // set to true when flying or movement suitable for yaw estimation
+                bool runEKF,          // set to true when flying or movement suitable for yaw estimation // 비행 중일때 이 estimator를 사용하면 좋다. 
                 ftype TAS);           // true airspeed used for centripetal accel compensation - set to 0 when not required.
 
     // Fuse NE velocty mesurements and update the EKF's and GSF state and covariance estimates

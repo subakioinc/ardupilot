@@ -632,7 +632,7 @@ void NavEKF3_core::CovarianceInit()
     Vector3F rot_vec_var;
     rot_vec_var.x = rot_vec_var.y = rot_vec_var.z = sq(0.1f);
 
-    // quaternion state 공분산을 초기화
+    // quaternion state 공분산을 초기화(EKF 처음 사용할때 필요한 공분산)
     // reset the quaternion state covariances
     CovariancePrediction(&rot_vec_var);
 
@@ -734,6 +734,7 @@ void NavEKF3_core::UpdateFilter(bool predict)
         // Predict the covariance growth
         CovariancePrediction(nullptr);
 
+        // yaw만 별도의 EKF에서 계산한다. EKFGSF_YAW class사용
         // GSF yaw estimator 알고리즘에서 IMU와 airspeed data를 사용해서 IMU prediction 단계를 수행시킨다.
         // 최신 yaw estimate를 제공하기 위해서 SelectMagFusion() 전에 실행해야만 한다.
         // Run the IMU prediction step for the GSF yaw estimator algorithm
@@ -749,7 +750,8 @@ void NavEKF3_core::UpdateFilter(bool predict)
         // Update states using GPS and altimeter data
         SelectVelPosFusion();
 
-        // GSF yaw estimator 알고리즘을 위해서 GPS 속도 보정 단계 수행
+        // yaw만 별도의 EKF에서 계산한다. KFGSF_YAW class사용
+        // GSF yaw estimator 알고리즘으로 KKFGSF_YAW의 correction을 수행
         // Run the GPS velocity correction step for the GSF yaw estimator algorithm
         // and use the yaw estimate to reset the main EKF yaw if requested
         // Muat be run after SelectVelPosFusion() so that fresh GPS data is available
@@ -1110,6 +1112,7 @@ void NavEKF3_core::calcOutputStates()
     }
 }
 
+// P = FPF' + Q 계산 (nextP = FPF' + Q)
 // 대수식으로 predicted state covariance 행렬을 계산(이 대수식은 python으로 자동생성)
 // 인자 : rotVarVectpr은 vector에 대한 포인터. 이 벡터는 quaternion states의 earth frame 불확실성 분산을 정의하며 quaternion state covariances의 reset만을 위해서 사용
 /*
@@ -1216,6 +1219,7 @@ void NavEKF3_core::CovariancePrediction(Vector3F *rotVarVecPtr)
         for (uint8_t i=12; i<=13; i++) processNoiseVariance[i] = windVelVar;
     }
 
+    // 변수값을 설정하여 공분산 growth 계산에 사용
     // set variables used to calculate covariance growth
     dvx = imuDataDelayed.delVel.x;
     dvy = imuDataDelayed.delVel.y;
@@ -1279,6 +1283,8 @@ void NavEKF3_core::CovariancePrediction(Vector3F *rotVarVecPtr)
         }
     }
 
+    // predicted covariance 계산(관성 센서 error propagation 때문에)
+    // 아래 대각선을 계산하고 대칭을 이용해서 복사
     // calculate the predicted covariance due to inertial sensor error propagation
     // we calculate the lower diagonal and copy to take advantage of symmetry
 
@@ -1836,6 +1842,7 @@ void NavEKF3_core::CovariancePrediction(Vector3F *rotVarVecPtr)
         }
     }
 
+    // Process noise를 추가하기
     // add the general state process noise variances
     if (stateIndexLim > 9) {
         for (uint8_t i=10; i<=stateIndexLim; i++) {
@@ -1843,6 +1850,7 @@ void NavEKF3_core::CovariancePrediction(Vector3F *rotVarVecPtr)
         }
     }
 
+    // dt vel bias state가 inactive이면 모든 공분산을 0으로 (다른 states와 상호작용이 일어나는 것을 막기 위해서)
     // inactive delta velocity bias states have all covariances zeroed to prevent
     // interacton with other states
     if (!inhibitDelVelBiasStates) {
@@ -1855,6 +1863,8 @@ void NavEKF3_core::CovariancePrediction(Vector3F *rotVarVecPtr)
         }
     }
 
+    // 전체 position 분산이 100m를 넘어가면 이전 prediction값으로 설정한다 -> 공분산 growth를 막기
+    //  
     // if the total position variance exceeds 1e4 (100m), then stop covariance
     // growth by setting the predicted to the previous values
     // This prevent an ill conditioned matrix from occurring for long periods
@@ -1870,6 +1880,7 @@ void NavEKF3_core::CovariancePrediction(Vector3F *rotVarVecPtr)
         }
     }
 
+    // 공분산은 대칭인점을 이용해서 복사
     // covariance matrix is symmetrical, so copy diagonals and copy lower half in nextP
     // to lower and upper half in P
     for (uint8_t row = 0; row <= stateIndexLim; row++) {
@@ -1881,6 +1892,7 @@ void NavEKF3_core::CovariancePrediction(Vector3F *rotVarVecPtr)
         }
     }
 
+    // 제한된 범위 내에 분산이 있도록 제약
     // constrain values to prevent ill-conditioning
     ConstrainVariances();
 
@@ -1888,6 +1900,7 @@ void NavEKF3_core::CovariancePrediction(Vector3F *rotVarVecPtr)
         vertVelVarClipCounter--;
     }
 
+    // tilt error 분산을 계산하여 tiltErrorVariance 에 저장
     calcTiltErrorVariance();
 
 #if CONFIG_HAL_BOARD == HAL_BOARD_SITL

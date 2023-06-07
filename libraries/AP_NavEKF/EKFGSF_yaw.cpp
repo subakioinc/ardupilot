@@ -44,12 +44,14 @@ void EKFGSF_yaw::update(const Vector3F &delAng,
     run_ekf_gsf = runEKF;
     true_airspeed = TAS;
 
+    // LPF 가속도 vector를 계산. 
     // Calculate a low pass filtered acceleration vector that will be used to keep the AHRS tilt aligned
     // The time constant of the filter is a fixed ratio relative to the time constant of the AHRS tilt correction loop
     const ftype filter_coef = fminF(EKFGSF_accelFiltRatio * delVelDT * EKFGSF_tiltGain, 1.0f);
     const Vector3F accel = delVel / fmaxF(delVelDT, 0.001f);
     ahrs_accel = ahrs_accel * (1.0f - filter_coef) + accel * filter_coef;
 
+    // states 초기화하고 가속도가 1g에 가까워지면 초기 tilt error가 커지는 원인이 되는 vehicle movment를 막기 위해서  
     // Iniitialise states and only when acceleration is close to 1g to prevent vehicle movement casuing a large initial tilt error
     if (!ahrs_tilt_aligned) {
         const ftype accel_norm_sq = accel.length_squared();
@@ -65,9 +67,11 @@ void EKFGSF_yaw::update(const Vector3F &delAng,
         return;
     }
 
+    // AHRS prediction models에서 사용하는 공통 변수를 계산  
     // Calculate common variables used by the AHRS prediction models
     ahrs_accel_norm = ahrs_accel.length();
 
+    // AHRS 가속도 fusion gain 계산하기. 
     // Calculate AHRS acceleration fusion gain using a quadratic weighting function that is unity at 1g
     // and zero at the min and max g limits. This reduces the effect of large g transients on the attitude
     // esitmates.
@@ -92,6 +96,7 @@ void EKFGSF_yaw::update(const Vector3F &delAng,
         accel_gain = 0.0f;
     }
 
+    // KEF의 predict 단계. 
     // Always run the AHRS prediction cycle for each model
     for (uint8_t mdl_idx = 0; mdl_idx < N_MODELS_EKFGSF; mdl_idx++) {
         predict(mdl_idx);
@@ -101,6 +106,8 @@ void EKFGSF_yaw::update(const Vector3F &delAng,
         vel_fuse_running = false;
     }
 
+    // yaw 계산. 
+    // angle wrapping을 피하기 위해서 yaw state를 vector로 변환
     // Calculate a composite yaw as a weighted average of the states for each model.
     // To avoid issues with angle wrapping, the yaw state is converted to a vector with legnth
     // equal to the weighting value before it is summed.
@@ -127,6 +134,7 @@ void EKFGSF_yaw::update(const Vector3F &delAng,
     }
     */
 
+   // yaw 분산 계산
     GSF.yaw_variance = 0.0f;
     for (uint8_t mdl_idx = 0; mdl_idx < N_MODELS_EKFGSF; mdl_idx++) {
         ftype yawDelta = wrap_PI(EKF[mdl_idx].X[2] - GSF.yaw);
@@ -323,6 +331,7 @@ void EKFGSF_yaw::predict(const uint8_t mdl_idx)
         return;
     }
 
+    // *** yaw state 계산
     // Calculate the yaw state using a projection onto the horizontal that avoids gimbal lock
     if (fabsF(AHRS[mdl_idx].R[2][0]) < fabsF(AHRS[mdl_idx].R[2][1])) {
         // use 321 Tait-Bryan rotation to define yaw state
@@ -332,6 +341,7 @@ void EKFGSF_yaw::predict(const uint8_t mdl_idx)
         EKF[mdl_idx].X[2] = atan2F(-AHRS[mdl_idx].R[0][1], AHRS[mdl_idx].R[1][1]); // first rotation (yaw)
     }
 
+    // dt velocity 계산. del_vel_NED  
     // calculate delta velocity in a horizontal front-right frame
     const Vector3F del_vel_NED = AHRS[mdl_idx].R * delta_velocity;
     const ftype dvx =   del_vel_NED[0] * cosF(EKF[mdl_idx].X[2]) + del_vel_NED[1] * sinF(EKF[mdl_idx].X[2]);
@@ -341,6 +351,7 @@ void EKFGSF_yaw::predict(const uint8_t mdl_idx)
     EKF[mdl_idx].X[0] += del_vel_NED[0];
     EKF[mdl_idx].X[1] += del_vel_NED[1];
 
+    // *** 공분산 predict 
     // predict covariance - autocode from https://github.com/priseborough/3_state_filter/blob/flightLogReplay-wip/calcPupdate.txt
 
     // Local short variable name copies required for readability

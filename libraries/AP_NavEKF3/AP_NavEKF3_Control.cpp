@@ -699,6 +699,7 @@ void  NavEKF3_core::updateFilterStatus(void)
     // If GPS height usage is specified, height is considered to be inaccurate until the GPS passes all checks
     bool hgtNotAccurate = (frontend->sources.getPosZSource() == AP_NavEKF_Source::SourceZ::GPS) && !validOrigin;
 
+    // flag를 사용하여 각 값을 계산하는 estimator가 유효한 상태인지를 결정 
     // set individual flags
     filterStatus.flags.attitude = !stateStruct.quat.is_nan() && filterHealthy;   // attitude valid (we need a better check)
     filterStatus.flags.horiz_vel = someHorizRefData && filterHealthy;      // horizontal velocity estimate valid
@@ -731,6 +732,7 @@ void NavEKF3_core::runYawEstimatorPrediction()
         return;
     }
 
+    // 수평 x, y와 속도에 GPS를 사용하는 경우에 계속 실행
     // ensure GPS is used for horizontal position and velocity
     if (frontend->sources.getPosXYSource() != AP_NavEKF_Source::SourceXY::GPS ||
         !frontend->sources.useVelXYSource(AP_NavEKF_Source::SourceXY::GPS)) {
@@ -758,12 +760,14 @@ void NavEKF3_core::runYawEstimatorCorrection()
         return;
     }
 
+    // GPS에서 측정한 vel x, y와 vel 정화도를 인자로 줘서 yawEstimator->fuseVelData()에서 계산
     if (EKFGSF_run_filterbank) {
         if (gpsDataToFuse) {
             Vector2F gpsVelNE = Vector2F(gpsDataDelayed.vel.x, gpsDataDelayed.vel.y);
             ftype gpsVelAcc = fmaxF(gpsSpdAccuracy, ftype(frontend->_gpsHorizVelNoise));
             yawEstimator->fuseVelData(gpsVelNE, gpsVelAcc);
 
+            // gsfYaw와 gsfYawVariance를 새로 구한다.
             // after velocity data has been fused the yaw variance estimate will have been refreshed and
             // is used maintain a history of validity
             ftype gsfYaw, gsfYawVariance;
