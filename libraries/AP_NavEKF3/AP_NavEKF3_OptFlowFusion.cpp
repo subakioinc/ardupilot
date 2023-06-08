@@ -52,6 +52,7 @@ void NavEKF3_core::SelectFlowFusion()
         EstimateTerrainOffset(ofDataDelayed);
     }
 
+    // 실제 fusion은 FuseOptFlow를 사용. 
     // Fuse optical flow data into the main filter
     if (flowDataToFuse && tiltOK) {
         const bool fuse_optflow = (frontend->_flowUse == FLOW_USE_NAV) && frontend->sources.useVelXYSource(AP_NavEKF_Source::SourceXY::OPTFLOW);

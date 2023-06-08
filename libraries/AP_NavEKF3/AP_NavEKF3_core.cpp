@@ -746,7 +746,7 @@ void NavEKF3_core::UpdateFilter(bool predict)
         // Update states using  magnetometer or external yaw sensor data
         SelectMagFusion();
 
-        // GPS와 고도 데이터를 사용해서 states를 업데이트
+        // GPS와 고도 데이터를 사용해서 퓨전하기
         // Update states using GPS and altimeter data
         SelectVelPosFusion();
 
@@ -757,9 +757,11 @@ void NavEKF3_core::UpdateFilter(bool predict)
         // Muat be run after SelectVelPosFusion() so that fresh GPS data is available
         runYawEstimatorCorrection();
 
+        // 거리 비콘 퓨전하기
         // Update states using range beacon data
         SelectRngBcnFusion();
 
+        // Optical Flow 퓨전하기
         // Update states using optical flow data
         SelectFlowFusion();
 
