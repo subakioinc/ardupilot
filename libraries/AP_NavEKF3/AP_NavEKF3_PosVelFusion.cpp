@@ -588,7 +588,7 @@ void NavEKF3_core::SelectVelPosFusion()
         }
     }
 
-    // 속도, position을 퓨전
+    // 속도, position, 높이를 퓨전
     // perform fusion
     if (fuseVelData || fusePosData || fuseHgtData) {
         FuseVelPosNED();
@@ -612,6 +612,7 @@ void NavEKF3_core::FuseVelPosNED()
     uint8_t stateIndex;
     uint8_t obsIndex;
 
+    // measurement 분산
     // declare variables used by state and covariance update calculations
     Vector6 R_OBS; // Measurement variances used for fusion
     Vector6 R_OBS_DATA_CHECKS; // Measurement variances used for data checks only
@@ -910,7 +911,7 @@ void NavEKF3_core::FuseVelPosNED()
                         innovVelPos[5] += constrain_ftype(-innovVelPos[5]+gndBaroInnovFloor, 0.0f, gndBaroInnovFloor+gndMaxBaroErr);
                     }
                 }
-
+                // 칼만 gain 계산, inno 분산 계산
                 // calculate the Kalman gain and calculate innovation variances
                 varInnovVelPos[obsIndex] = P[stateIndex][stateIndex] + R_OBS[obsIndex];
                 SK = 1.0f/varInnovVelPos[obsIndex];
@@ -962,6 +963,7 @@ void NavEKF3_core::FuseVelPosNED()
                     zero_range(&Kfusion[0], 13, 15);
                 }
 
+                // 칼만 게인 업데이트. K=PHS'
                 // inhibit magnetic field state estimation by setting Kalman gains to zero
                 if (!inhibitMagStates) {
                     for (uint8_t i = 16; i<=21; i++) {
@@ -996,6 +998,7 @@ void NavEKF3_core::FuseVelPosNED()
                     }
                 }
                 if (healthyFusion) {
+                    // *** 공분산 행렬 업데이트 P = P - KHP
                     // update the covariance matrix
                     for (uint8_t i= 0; i<=stateIndexLim; i++) {
                         for (uint8_t j= 0; j<=stateIndexLim; j++) {
@@ -1007,6 +1010,7 @@ void NavEKF3_core::FuseVelPosNED()
                     ForceSymmetry();
                     ConstrainVariances();
 
+                    // *** x = x + K(z-H) -> x = x + K(Inno)
                     // update states and renormalise the quaternions
                     for (uint8_t i = 0; i<=stateIndexLim; i++) {
                         statesArray[i] = statesArray[i] - Kfusion[i] * innovVelPos[obsIndex];
